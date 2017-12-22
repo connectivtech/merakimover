@@ -67,9 +67,7 @@ function processMerakiNetworks ($orgs) {
 		$org_id = $orgs[$i];
 
 		$networks = curlMeraki('organizations/' . $org_id . '/networks/');
-
-		print_r($networks);
-
+		
 		foreach($networks as $i => $item) {
 			$network_id = $networks[$i]->{'id'};
 			
