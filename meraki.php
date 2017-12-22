@@ -2,6 +2,24 @@
 
 include "settings.php";
 
+$insertErrorCounter = 0;
+$insertSuccessCounter = 0;
+
+date_default_timezone_set('UTC');
+
+$runTimestamp = date('Y-m-d H:i:s');
+$dateOnly = date('Y-m-d');
+echo("$runTimestamp \n");
+echo("$dateOnly \n");
+
+$runTimestamp = date_add(date_create($dateOnly),date_interval_create_from_date_string("40 days"));
+
+$datediffs = date_diff(date_create($runTimestamp), date_create($dateOnly));
+
+echo $datediffs;
+
+exit;
+
 //todo: parse into JSON
 $decoded = getMerakiOrgs($merakiURL, $merakiHeaders);
 
@@ -97,6 +115,7 @@ function processMerakiNetworks ($orgs) {
 
 function processMerakiDevices ($networks) {
 	echo "Start processMerakiDevices \n";
+	$serials = array();
 	foreach($networks as $i => $item) {
 		echo ("\n");
 		$network_id = $networks[$i];
@@ -105,7 +124,6 @@ function processMerakiDevices ($networks) {
 
 		foreach($devices as $i => $item) {
 			$serial 	= $devices[$i]->{'serial'};
-			$serials = array();
 			$serials[] = $serial;
 			
 			$boolDeviceExist = doesDeviceExist($serial);
@@ -134,21 +152,19 @@ function processMerakiDevices ($networks) {
 				die();
 			}
 
-		} // end foreach networks
-	} // end foreach orgs
+		} // end foreach devices
+	} // end foreach networks
 	return $serials;
 } // end processMerakiDevices
 
 function processMerakiClients ($devices) {
-	echo "Start processMerakiClients \n";
+	echo "Start processMerakiClients for " . count($devices) . " devices \n";
 	foreach($devices as $i => $item) {
 		echo ("\n");
 		$device = $devices[$i];
 		echo($device . "\n");
 
-		$clients = curlMeraki('devices/' . $device . '/clients?timespan=3000');
-
-		var_dump($clients);
+		$clients = curlMeraki('devices/' . $device . '/clients?timespan=2592000');
 
 		foreach($clients as $i => $item) {
 			$mac 	= $clients[$i]->{'mac'};
@@ -156,6 +172,7 @@ function processMerakiClients ($devices) {
 			echo ("Insert $mac");
 			echo "\n";
 			$id = $clients[$i]->{'id'};
+			$mac = $clients[$i]->{'mac'};
 			$description = $clients[$i]->{'description'};
 			$mdnsname = $clients[$i]->{'mdnsName'};
 			$dhcphostname = $clients[$i]->{'dhcpHostname'};
@@ -165,7 +182,7 @@ function processMerakiClients ($devices) {
 			$sent = isset($clients[$i]->{'usage'}->{'sent'}) ? $clients[$i]->{'usage'}->{'sent'} : '';			
 			$recv = isset($clients[$i]->{'usage'}->{'recv'}) ? $clients[$i]->{'usage'}->{'recv'} : '';
 
-			// insertDevice(   );
+			insertClient( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device );
 		} // end foreach client
 	} // end foreach devices
 } // end processMerakiClients
@@ -239,7 +256,7 @@ function doesDeviceExist($serial) {
 
 
 function insertOrg ($org_id, $org_name) {
-	global $aws_mysqli, $dbOrgTable;
+	global $aws_mysqli, $dbOrgTable, $insertSuccessCounter, $insertErrorCounter;
 
 	$org_id = $aws_mysqli->real_escape_string($org_id);
 	$org_name = $aws_mysqli->real_escape_string($org_name);
@@ -255,14 +272,16 @@ function insertOrg ($org_id, $org_name) {
 	if(!$resultInsert) {
 		echo ("Error $aws_mysqli->error to insert org ID $org_id: $queryInsertOrg");
 		return false;
+		$insertErrorCounter++; 
 	  } else {
 	  	echo("Insert success");
+	  	$insertSuccessCounter++; 
 	  	return true;
 	  }
 } // end insertOrg
 
 function insertNetwork ($network_id, $network_org_id, $network_name, $network_timezone, $network_tags, $network_type) {
-	global $aws_mysqli, $dbNetworkTable;
+	global $aws_mysqli, $dbNetworkTable, $insertSuccessCounter, $insertErrorCounter;
 
 	$network_id = $aws_mysqli->real_escape_string($network_id);
 	$network_org_id =  $aws_mysqli->real_escape_string($network_org_id);
@@ -281,15 +300,17 @@ function insertNetwork ($network_id, $network_org_id, $network_name, $network_ti
 	$resultInsert = $aws_mysqli->query($queryInsertNetwork);
 	if(!$resultInsert) {
 		echo ("Error $aws_mysqli->error to insert network ID $network_id: $queryInsertNetwork");
+		$insertErrorCounter++; 
 		return false;
 	  } else {
 	  	echo("Insert network success");
+	  	$insertSuccessCounter++; 
 	  	return true;
 	  }
 } // end insertNetwork
 
 function insertDevice ( $serial, $device_network_id, $device_name, $device_mac, $device_lan_ip, $device_lat, $device_lng, $device_model, $device_address, $device_notes, $device_tags ) {
-	global $aws_mysqli;
+	global $aws_mysqli, $insertSuccessCounter, $insertErrorCounter;
 
 	$device_serial = $aws_mysqli->real_escape_string($serial);
 	$device_network_id = $aws_mysqli->real_escape_string($device_network_id);
@@ -313,15 +334,53 @@ function insertDevice ( $serial, $device_network_id, $device_name, $device_mac, 
 	$resultInsert = $aws_mysqli->query($queryInsertDevice);
 	if(!$resultInsert) {
 		echo ("Error $aws_mysqli->error to insert device serial $serial: $queryInsertDevice");
+		$insertErrorCounter++; 
 		return false;
 	  } else {
 	  	echo("Insert device success");
+	  	$insertSuccessCounter++; 
 	  	return true;
 	  }
-} // end insertNetwork
+} // end insertDevice
 
-// mysql query for later
-// $query = "";
-// $result = $aws_mysqli->query($query);
+function insertClient ( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device_serial) {
+	global $aws_mysqli, $insertSuccessCounter, $insertErrorCounter;
+
+	$client_device_serial = $aws_mysqli->real_escape_string($device_serial);
+	$client_id = $aws_mysqli->real_escape_string($id);
+	$description = $aws_mysqli->real_escape_string($description);
+	$client_mac = $aws_mysqli->real_escape_string($mac);
+	$mdnsname = $aws_mysqli->real_escape_string($mdnsname);
+	$dhcphostname = $aws_mysqli->real_escape_string($dhcphostname);
+	$ip = $aws_mysqli->real_escape_string($ip);
+	$vlan = $aws_mysqli->real_escape_string($vlan);
+	$switchport = $aws_mysqli->real_escape_string($switchport);
+	$sent = $aws_mysqli->real_escape_string($sent);
+	$recv = $aws_mysqli->real_escape_string($recv);
+			
+//todo add timespan in to know data xfer
+
+	$insertFields = " client_device_serial, client_id, client_mac, client_description, client_mdnsname, client_dhcphostname, client_ip, client_vlan, client_switchport, client_sent, client_recv ";
+
+	$queryInsertClient = "INSERT INTO meraki_clients ($insertFields) VALUES " . 
+		" ( '$client_device_serial', '$client_id', '$client_mac', '$description', '$mdnsname', '$dhcphostname', '$ip', '$vlan', '$switchport', '$sent', '$recv' ); " ;
+
+	// echo $queryInsertClient ;
+
+	$resultInsert = $aws_mysqli->query($queryInsertClient);
+	if(!$resultInsert) {
+		echo ("Error $aws_mysqli->error to insert client $client_id: $queryInsertClient");
+		$insertErrorCounter++; 
+		return false;
+	  } else {
+	  	echo("Insert client success $client_id \n");
+	  	$insertSuccessCounter++;
+	  	return true;
+	  }
+} // end insertClient
+
+echo("Insert successes: $insertSuccessCounter \n" );
+echo("Insert failures: $insertErrorCounter \n" );
+
 
 ?>
