@@ -2,18 +2,21 @@
 
 include "settings.php";
 
+echo logEvent("Meraki mover started");
+
 $insertErrorCounter = 0;
 $insertSuccessCounter = 0;
 
-date_default_timezone_set('America/Denver');
+date_default_timezone_set('UTC');
 
 //todo: parse into JSON
 $decoded = getMerakiOrgs($merakiURL, $merakiHeaders);
 
 if (isset($decoded->response->status) && $decoded->response->status == 'ERROR') {
+    logEvent('Error API curl failed: ' . $decoded->response->errormessage);
     die('error occured: ' . $decoded->response->errormessage);
 } else {
-	echo 'response ok! returned: ' . count($decoded) ;
+	echo logEvent('API successful: ' . count($decoded) ) ;
 	$orgs = processMerakiOrgs($decoded);
  	$networks = processMerakiNetworks($orgs);
  	$devices = processMerakiDevices($networks);
@@ -43,13 +46,12 @@ function processMerakiOrgs ($decoded) {
 			echo ("Meraki org ID exists: $org_id");
 			echo "\n";
 		} elseif ($boolOrgExist === false) {
-			echo ("No org found for $org_id, lets insert it");
-			echo "\n";
+			echo logEvent("New org found: $org_id");
 			echo $decoded[$i]->{'name'} . "\n" ;
 			$org_name = $decoded[$i]->{'name'};
 			insertOrg($org_id, $org_name);		
 		} else {
-			echo "Error: Meraki org check broke";
+			echo logEvent("Error: Meraki org check broke");
 			die();
 		}
 
@@ -82,7 +84,7 @@ function processMerakiNetworks ($orgs) {
 				echo "\n";
 			} elseif ($boolNetworkExist === false) {
 				// insert new visitor
-				echo ("No network found for $network_id, lets insert it");
+				echo logEvent("New network found: $network_id");
 				echo "\n";
 				$network_name = $networks[$i]->{'name'};
 				$network_timezone = $networks[$i]->{'timeZone'};
@@ -91,7 +93,7 @@ function processMerakiNetworks ($orgs) {
 
 				insertNetwork($network_id, $org_id, $network_name, $network_timezone, $network_tags, $network_type);
 			} else {
-				echo "Error: Meraki networks check broke";
+				echo logEvent("Error: Meraki networks check broke");
 				die();
 			}
 
@@ -116,11 +118,11 @@ function processMerakiDevices ($networks) {
 			$boolDeviceExist = doesDeviceExist($serial);
 
 			if ($boolDeviceExist === true) {
-				echo ("Meraki device exists w serial: $serial");
+				echo ("Meraki device exists: $serial");
 				echo "\n";
 			} elseif ($boolDeviceExist === false) {
 				// insert new visitor
-				echo ("No device found for serial $serial, lets insert it");
+				echo logEvent("New Meraki device: $serial");
 				echo "\n";
 				$device_network_id = $devices[$i]->{'networkId'};
 				$device_name = $devices[$i]->{'name'};
@@ -135,7 +137,7 @@ function processMerakiDevices ($networks) {
 
 				insertDevice( $serial, $device_network_id, $device_name, $device_mac, $device_lan_ip, $device_lat, $device_lng, $device_model, $device_address, $device_notes, $device_tags  );
 			} else {
-				echo "Error: Meraki devices by serial check broke";
+				echo logEvent("Error: Meraki devices by serial check broke");
 				die();
 			}
 
@@ -187,6 +189,7 @@ function curlMeraki ($merakiAPIpath) {
 	if ($curl_response === false) {
 		$info = curl_getinfo($curl);
 		curl_close($curl);
+		echo logEvent("Error Curl $merakiURL $merakiHeaders $merakiAPIpath ". var_export($info));
 		die("\n Curl error: " . var_export($info));
 	}
 
@@ -205,7 +208,7 @@ function doesOrgExist ($org_id) {
 	$queryExist = "SELECT org_id FROM $dbOrgTable WHERE org_id = $org_id";
 	$resultExist = $aws_mysqli->query($queryExist);
 	if(!$resultExist) {
-		echo ("Error $aws_mysqli->error to check if org ID exists: $queryExist");
+		echo logEvent("Error $aws_mysqli->error to check if org ID exists: $queryExist");
 	} elseif($resultExist->num_rows == 0) {
 		return false;
 	  } else {
@@ -219,7 +222,7 @@ function doesNetworkExist($network_id) {
 	$queryExist = "SELECT network_id FROM $dbNetworkTable WHERE network_id = '$network_id'";
 	$resultExist = $aws_mysqli->query($queryExist);
 	if(!$resultExist) {
-		echo ("Error $aws_mysqli->error to check if network ID exists: $queryExist");
+		echo logEvent("Error $aws_mysqli->error to check if network ID exists: $queryExist");
 	} elseif($resultExist->num_rows == 0) {
 		return false;
 	  } else {
@@ -234,7 +237,7 @@ function doesDeviceExist($serial) {
 	$queryExist = "SELECT device_serial FROM meraki_devices WHERE device_serial = '$serial'";
 	$resultExist = $aws_mysqli->query($queryExist);
 	if(!$resultExist) {
-		echo ("Error $aws_mysqli->error to check if serial exists: $queryExist");
+		echo logEvent("Error $aws_mysqli->error to check if serial exists: $queryExist");
 	} elseif($resultExist->num_rows == 0) {
 		return false;
 	  } else {
@@ -258,7 +261,7 @@ function insertOrg ($org_id, $org_name) {
 
 	$resultInsert = $aws_mysqli->query($queryInsertOrg);
 	if(!$resultInsert) {
-		echo ("Error $aws_mysqli->error to insert org ID $org_id: $queryInsertOrg");
+		echo logEvent("Error $aws_mysqli->error to insert org ID $org_id: $queryInsertOrg");
 		return false;
 		$insertErrorCounter++; 
 	  } else {
@@ -287,7 +290,7 @@ function insertNetwork ($network_id, $network_org_id, $network_name, $network_ti
 
 	$resultInsert = $aws_mysqli->query($queryInsertNetwork);
 	if(!$resultInsert) {
-		echo ("Error $aws_mysqli->error to insert network ID $network_id: $queryInsertNetwork");
+		echo logEvent("Error $aws_mysqli->error to insert network ID $network_id: $queryInsertNetwork");
 		$insertErrorCounter++; 
 		return false;
 	  } else {
@@ -354,11 +357,9 @@ function insertClient ( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, 
 	$queryInsertClient = "INSERT INTO meraki_clients ($insertFields) VALUES " . 
 		" ( '$client_device_serial', '$client_id', '$client_mac', '$description', '$mdnsname', '$dhcphostname', '$ip', '$vlan', '$switchport', '$sent', '$recv', $timespan ); " ;
 
-	// echo $queryInsertClient ;
-
 	$resultInsert = $aws_mysqli->query($queryInsertClient);
 	if(!$resultInsert) {
-		echo ("Error $aws_mysqli->error to insert client $client_id: $queryInsertClient");
+		echo logEvent("Error $aws_mysqli->error to insert client $client_id: $queryInsertClient");
 		$insertErrorCounter++; 
 		return false;
 	  } else {
@@ -368,8 +369,9 @@ function insertClient ( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, 
 	  }
 } // end insertClient
 
-echo("Insert successes: $insertSuccessCounter \n" );
-echo("Insert failures: $insertErrorCounter \n" );
+echo logEvent("Insert successes: $insertSuccessCounter");
+echo logEvent("Insert failures: $insertErrorCounter");
+echo logEvent("Meraki mover finished")
 
 
 ?>

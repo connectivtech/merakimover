@@ -41,18 +41,20 @@ function newline() {
 };
 
 function logEvent($message) {
-	global $logPath, $logType;
+  global $logPath, $logType, $environment;
 
     if ($message != '') {
         // Add a timestamp to the start of the $message
-        $message = gmDate(DATE_ATOM) . ': ' . $logType . ' ' . $message;
+        $message = gmDate(DATE_ATOM) . ': ' . $logType . $environment . ' ' . $message;
         // todo: move this logic to settings.php ? 
-		$fp = fopen($logPath, 'a');
+    $fp = fopen($logPath, 'a');
         fwrite($fp, $message."\n");
         fclose($fp);
+        echo ("\n");
         return "$message";
     }
 }
+
 
 function showIP() {
   $ch = curl_init('http://ifconfig.me/ip');
