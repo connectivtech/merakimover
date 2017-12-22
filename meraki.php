@@ -5,20 +5,7 @@ include "settings.php";
 $insertErrorCounter = 0;
 $insertSuccessCounter = 0;
 
-date_default_timezone_set('UTC');
-
-$runTimestamp = date('Y-m-d H:i:s');
-$dateOnly = date('Y-m-d');
-echo("$runTimestamp \n");
-echo("$dateOnly \n");
-
-$runTimestamp = date_add(date_create($dateOnly),date_interval_create_from_date_string("40 days"));
-
-$datediffs = date_diff(date_create($runTimestamp), date_create($dateOnly));
-
-echo $datediffs;
-
-exit;
+date_default_timezone_set('America/Denver');
 
 //todo: parse into JSON
 $decoded = getMerakiOrgs($merakiURL, $merakiHeaders);
@@ -160,11 +147,12 @@ function processMerakiDevices ($networks) {
 function processMerakiClients ($devices) {
 	echo "Start processMerakiClients for " . count($devices) . " devices \n";
 	foreach($devices as $i => $item) {
-		echo ("\n");
+		$timespan = secondsSinceMidnight();
+		echo ("Seconds since midnight to set as timespan: $timespan \n");
 		$device = $devices[$i];
 		echo($device . "\n");
 
-		$clients = curlMeraki('devices/' . $device . '/clients?timespan=2592000');
+		$clients = curlMeraki('devices/' . $device . '/clients?timespan=' . $timespan);
 
 		foreach($clients as $i => $item) {
 			$mac 	= $clients[$i]->{'mac'};
@@ -182,7 +170,7 @@ function processMerakiClients ($devices) {
 			$sent = isset($clients[$i]->{'usage'}->{'sent'}) ? $clients[$i]->{'usage'}->{'sent'} : '';			
 			$recv = isset($clients[$i]->{'usage'}->{'recv'}) ? $clients[$i]->{'usage'}->{'recv'} : '';
 
-			insertClient( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device );
+			insertClient( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device, $timespan );
 		} // end foreach client
 	} // end foreach devices
 } // end processMerakiClients
@@ -343,7 +331,7 @@ function insertDevice ( $serial, $device_network_id, $device_name, $device_mac, 
 	  }
 } // end insertDevice
 
-function insertClient ( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device_serial) {
+function insertClient ( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device_serial, $timespan) {
 	global $aws_mysqli, $insertSuccessCounter, $insertErrorCounter;
 
 	$client_device_serial = $aws_mysqli->real_escape_string($device_serial);
@@ -357,13 +345,14 @@ function insertClient ( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, 
 	$switchport = $aws_mysqli->real_escape_string($switchport);
 	$sent = $aws_mysqli->real_escape_string($sent);
 	$recv = $aws_mysqli->real_escape_string($recv);
-			
+	$timespan = $aws_mysqli->real_escape_string($timespan);
+
 //todo add timespan in to know data xfer
 
-	$insertFields = " client_device_serial, client_id, client_mac, client_description, client_mdnsname, client_dhcphostname, client_ip, client_vlan, client_switchport, client_sent, client_recv ";
+	$insertFields = " client_device_serial, client_id, client_mac, client_description, client_mdnsname, client_dhcphostname, client_ip, client_vlan, client_switchport, client_sent, client_recv, timespan ";
 
 	$queryInsertClient = "INSERT INTO meraki_clients ($insertFields) VALUES " . 
-		" ( '$client_device_serial', '$client_id', '$client_mac', '$description', '$mdnsname', '$dhcphostname', '$ip', '$vlan', '$switchport', '$sent', '$recv' ); " ;
+		" ( '$client_device_serial', '$client_id', '$client_mac', '$description', '$mdnsname', '$dhcphostname', '$ip', '$vlan', '$switchport', '$sent', '$recv', $timespan ); " ;
 
 	// echo $queryInsertClient ;
 

@@ -20,6 +20,21 @@
 // 	}
 // }
 
+function secondsSinceMidnight () {
+  $startdate = new DateTime();
+  date_time_set($startdate, 00, 00);
+  $date = new DateTime();
+  $datediff = date_diff($date, $startdate);
+
+  // var_dump($datediff);
+
+  $seconds = $datediff->h * 60 * 60;
+  $seconds = $datediff->i * 60 + $seconds;
+  $seconds = $datediff->s + $seconds;
+
+  return $seconds;
+}
+
 
 function newline() {
 	echo nl2br ("\n");
