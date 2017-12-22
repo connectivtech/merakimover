@@ -1,6 +1,7 @@
 <?php
 
 include "settings.php";
+include "db_init.php";
 
 echo logEvent("Meraki mover started");
 
@@ -67,7 +68,7 @@ function processMerakiNetworks ($orgs) {
 		$org_id = $orgs[$i];
 
 		$networks = curlMeraki('organizations/' . $org_id . '/networks/');
-		
+
 		foreach($networks as $i => $item) {
 			$network_id = $networks[$i]->{'id'};
 			
