@@ -148,8 +148,9 @@ function processMerakiDevices ($networks) {
 function processMerakiClients ($devices) {
 	echo "Start processMerakiClients for " . count($devices) . " devices \n";
 	foreach($devices as $i => $item) {
-		$timespan = secondsSinceMidnight();
-		echo ("Seconds since midnight to set as timespan: $timespan \n");
+		$timespan = 300;
+		// $timespan = secondsSinceMidnight();
+		// echo ("Seconds since midnight to set as timespan: $timespan \n");
 		$device = $devices[$i];
 		echo($device . "\n");
 
