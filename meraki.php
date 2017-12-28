@@ -4,20 +4,24 @@ include "settings.php";
 include "db_init.php";
 
 echo logEvent("Meraki mover started");
+echo "\n";
 
 $insertErrorCounter = 0;
 $insertSuccessCounter = 0;
 
 date_default_timezone_set('UTC');
 
-//todo: parse into JSON
 $decoded = getMerakiOrgs($merakiURL, $merakiHeaders);
 
 if (isset($decoded->response->status) && $decoded->response->status == 'ERROR') {
     logEvent('Error API curl failed: ' . $decoded->response->errormessage);
     die('error occured: ' . $decoded->response->errormessage);
-} else {
-	echo logEvent('API successful: ' . count($decoded) ) ;
+}
+	elseif (empty($decoded)) {
+		echo logEvent("Error API call was valid but returned no orgs");
+	}
+	else {
+	echo logEvent('API successful, count: ' . count($decoded) . "\n" ) ;
 	$orgs = processMerakiOrgs($decoded);
  	$networks = processMerakiNetworks($orgs);
  	$devices = processMerakiDevices($networks);
@@ -37,7 +41,6 @@ function getMerakiOrgs ($merakiURL, $merakiHeaders) {
 function processMerakiOrgs ($decoded) {
 	$orgs = array();
 	foreach($decoded as $i => $item) {
-		echo ("\n");
 		$org_id = $decoded[$i]->{'id'};
 		$orgs[] = $org_id ;
 		$boolOrgExist = doesOrgExist($org_id);
@@ -61,52 +64,57 @@ function processMerakiOrgs ($decoded) {
 	return($orgs);
 } // end processMerakiOrgs
 
+// take an array of org id's and add networks
 function processMerakiNetworks ($orgs) {
 	echo "Start processMerakiNetworks \n";
+	$networksArr = array();
 	foreach($orgs as $i => $item) {
 		echo ("\n");
 		$org_id = $orgs[$i];
 
 		$networks = curlMeraki('organizations/' . $org_id . '/networks/');
 
-		foreach($networks as $i => $item) {
-			$network_id = $networks[$i]->{'id'};
-			
-			$networks = array();
-			$networks[] = $network_id;
+		if (empty($networks)) {
+			echo logEvent ("Error No networks found for $org_id");
+		} else {
+			foreach($networks as $i => $item) {
+					$network_id = $networks[$i]->{'id'};
+					
+					$networksArr[] = $network_id;
 
-			$boolNetworkExist = doesNetworkExist($network_id);
+					$boolNetworkExist = doesNetworkExist($network_id);
 
-			if ($boolNetworkExist === true) {
-				// dont insert again if already exists, and we can goto next visitor
-				echo ("Meraki network ID exists: $network_id");
-				echo "\n";
-			} elseif ($boolNetworkExist === false) {
-				// insert new visitor
-				echo logEvent("New network found: $network_id");
-				echo "\n";
-				$network_name = $networks[$i]->{'name'};
-				$network_timezone = $networks[$i]->{'timeZone'};
-				$network_tags = $networks[$i]->{'tags'};
-				$network_type = $networks[$i]->{'type'};
+					if ($boolNetworkExist === true) {
+						// dont insert again if already exists, and we can goto next visitor
+						echo ("Meraki network ID exists: $network_id");
+						echo "\n";
+					} elseif ($boolNetworkExist === false) {
+						// insert new visitor
+						echo logEvent("New network found: $network_id");
+						echo "\n";
+						$network_name = $networks[$i]->{'name'};
+						$network_timezone = $networks[$i]->{'timeZone'};
+						$network_tags = $networks[$i]->{'tags'};
+						$network_type = $networks[$i]->{'type'};
 
-				insertNetwork($network_id, $org_id, $network_name, $network_timezone, $network_tags, $network_type);
-			} else {
-				echo logEvent("Error: Meraki networks check broke");
-				die();
-			}
+						insertNetwork($network_id, $org_id, $network_name, $network_timezone, $network_tags, $network_type);
+					} else {
+						echo logEvent("Error: Meraki networks check broke");
+						die();
+					}
 
-		} // end foreach networks
+				} // end foreach networks		
+		} // end else
 	} // end foreach orgs
-	return $networks;
+	return $networksArr;
 } // end processMerakiNetworks
 
 function processMerakiDevices ($networks) {
-	echo "Start processMerakiDevices \n";
+	echo "Start processMerakiDevices for " . count($networks) . " networks \n";
 	$serials = array();
 	foreach($networks as $i => $item) {
-		echo ("\n");
 		$network_id = $networks[$i];
+		echo "Get devices for network_id $network_id \n";
 
 		$devices = curlMeraki('networks/' . $network_id . '/devices/');
 
@@ -126,7 +134,7 @@ function processMerakiDevices ($networks) {
 				$device_network_id = $devices[$i]->{'networkId'};
 				$device_name = $devices[$i]->{'name'};
 				$device_mac = $devices[$i]->{'mac'};
-				$device_lan_ip = $devices[$i]->{'lanIp'};
+				$device_lan_ip = isset($devices[$i]->{'lanIp'}) ? $devices[$i]->{'lanIp'} : '';
 				$device_lat = $devices[$i]->{'lat'};
 				$device_lng = $devices[$i]->{'lng'};
 				$device_model = $devices[$i]->{'model'};
@@ -156,24 +164,27 @@ function processMerakiClients ($devices) {
 
 		$clients = curlMeraki('devices/' . $device . '/clients?timespan=' . $timespan);
 
-		foreach($clients as $i => $item) {
-			$mac 	= $clients[$i]->{'mac'};
-			
-			echo ("Insert $mac");
-			echo "\n";
-			$id = $clients[$i]->{'id'};
-			$mac = $clients[$i]->{'mac'};
-			$description = $clients[$i]->{'description'};
-			$mdnsname = $clients[$i]->{'mdnsName'};
-			$dhcphostname = $clients[$i]->{'dhcpHostname'};
-			$ip = $clients[$i]->{'ip'};
-			$vlan = $clients[$i]->{'vlan'};
-			$switchport = $clients[$i]->{'switchport'};
-			$sent = isset($clients[$i]->{'usage'}->{'sent'}) ? $clients[$i]->{'usage'}->{'sent'} : '';			
-			$recv = isset($clients[$i]->{'usage'}->{'recv'}) ? $clients[$i]->{'usage'}->{'recv'} : '';
+		if (empty($clients)) {
+			echo logEvent ("Error No clients found for $device");
+		} else {
+			foreach($clients as $i => $item) {
+				$mac = $clients[$i]->{'mac'};
+				echo ("Insert $mac");
+				echo "\n";
+				$id = $clients[$i]->{'id'};
+				$mac = $clients[$i]->{'mac'};
+				$description = $clients[$i]->{'description'};
+				$mdnsname = $clients[$i]->{'mdnsName'};
+				$dhcphostname = $clients[$i]->{'dhcpHostname'};
+				$ip = $clients[$i]->{'ip'};
+				$vlan = $clients[$i]->{'vlan'};
+				$switchport = $clients[$i]->{'switchport'};
+				$sent = isset($clients[$i]->{'usage'}->{'sent'}) ? $clients[$i]->{'usage'}->{'sent'} : '';			
+				$recv = isset($clients[$i]->{'usage'}->{'recv'}) ? $clients[$i]->{'usage'}->{'recv'} : '';
 
-			insertClient( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device, $timespan );
-		} // end foreach client
+				insertClient( $id, $mac, $description, $mdnsname, $dhcphostname, $ip, $vlan, $switchport, $sent, $recv, $device, $timespan );
+			} // end foreach client
+		} // end else
 	} // end foreach devices
 } // end processMerakiClients
 
@@ -186,20 +197,27 @@ function curlMeraki ($merakiAPIpath) {
 
 	$curl_response = curl_exec($curl);
 
-	if ($curl_response === false) {
+	$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+
+	if ($httpcode == '404') {
+		echo logEvent("Error HTTP 404 from API $merakiAPIpath - bad auth or path");
+	} 	elseif ($httpcode == '400') {
+		echo logEvent("Error HTTP 400 from API $merakiAPIpath - invalid device type?");
+		print_r($curl_response);
+	}
+		elseif ($curl_response === false) {
 		$info = curl_getinfo($curl);
 		curl_close($curl);
 		echo logEvent("Error Curl $merakiURL $merakiHeaders $merakiAPIpath ". var_export($info));
 		die("\n Curl error: " . var_export($info));
-	}
+	} else {
+		return json_decode($curl_response, false, 512, JSON_BIGINT_AS_STRING);
+		//print_r(json_decode($curl_response, false, 512, JSON_BIGINT_AS_STRING));
 
-	// later we can see if 200 and log error
-	// $httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-	// echo $httpcode;
+	}
 
 	curl_close($curl);
 
-	return json_decode($curl_response);
 } //end curlMeraki
 
 function doesOrgExist ($org_id) {
@@ -218,7 +236,7 @@ function doesOrgExist ($org_id) {
 
 function doesNetworkExist($network_id) {
 	global $aws_mysqli, $dbNetworkTable;
-	$org_id = $aws_mysqli->real_escape_string($network_id);
+	$network_id = $aws_mysqli->real_escape_string($network_id);
 	$queryExist = "SELECT network_id FROM $dbNetworkTable WHERE network_id = '$network_id'";
 	$resultExist = $aws_mysqli->query($queryExist);
 	if(!$resultExist) {
@@ -255,7 +273,7 @@ function insertOrg ($org_id, $org_name) {
 	$insertFields = " org_id, org_name ";
 
 	$queryInsertOrg = "INSERT INTO $dbOrgTable ($insertFields) VALUES " . 
-		" ( $org_id, '$org_name' ); " ;
+		" ( '$org_id', '$org_name' ); " ;
 
 	echo $queryInsertOrg ;
 
