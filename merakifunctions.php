@@ -47,11 +47,18 @@ function logEvent($message) {
         // Add a timestamp to the start of the $message
         $message = gmDate(DATE_ATOM) . ': ' . $logType . $environment . ' ' . $message;
         // todo: move this logic to settings.php ? 
-    $fp = fopen($logPath, 'a');
-        fwrite($fp, $message."\n");
-        fclose($fp);
-        echo ("\n");
-        return "$message";
+    
+    if (is_writeable($logPath)) {
+      $fp = fopen($logPath, 'a');
+          fwrite($fp, $message."\n");
+          fclose($fp);
+          echo ("\n");
+          return "$message";
+    } else {
+      echo("Error $logPath is not writable");
+      exit();
+    }
+    
     }
 }
 
