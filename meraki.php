@@ -165,7 +165,7 @@ function processMerakiClients ($devices) {
 		$clients = curlMeraki('devices/' . $device . '/clients?timespan=' . $timespan);
 
 		if (empty($clients)) {
-			echo logEvent ("Error No clients found for $device");
+			echo logEvent ("Warning No clients found for $device");
 		} else {
 			foreach($clients as $i => $item) {
 				$mac = $clients[$i]->{'mac'};
